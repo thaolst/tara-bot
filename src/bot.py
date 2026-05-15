@@ -1,170 +1,51 @@
-#!/usr/bin/env python3
-"""Tara Bot — Telegram bot entry point."""
-
-from __future__ import annotations
-
-import asyncio
 import logging
-import threading
-from datetime import datetime
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
+import os
 from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    filters,
-)
-
-from .config import Config
+from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from .config import config
 from .agents import Agent
 
 logging.basicConfig(
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
 )
 log = logging.getLogger("tara-bot")
 
-
-# ── In-memory sessions ───────────────────────────────────────────────
-
 sessions: dict[int, Agent] = {}
 
-
 def get_agent(user_id: int) -> Agent:
-    """Get or create an agent session for a user."""
     if user_id not in sessions:
         sessions[user_id] = Agent()
     return sessions[user_id]
 
-
-# ── Authorization ────────────────────────────────────────────────────
-
 def is_allowed(user_id: int) -> bool:
-    allowed = Config.allowed_user_id
+    allowed = config.allowed_user_id
     if not allowed:
-        return True  # no restriction set
+        return True
     return str(user_id) in allowed.split(",")
 
-
-def authorize(update: Update) -> bool:
-    uid = update.effective_user.id if update.effective_user else 0
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    
+    uid = update.effective_user.id
     if not is_allowed(uid):
-        log.warning(f"Blocked unauthorized access: {uid}")
-        return False
-    return True
-
-
-# ── Handlers ─────────────────────────────────────────────────────────
-
-async def start(update: Update, _context) -> None:
-    if not authorize(update):
-        await update.message.reply_text(
-            "⛔ Bạn không phải chủ bot này."
-        )
+        await update.message.reply_text("Xin lỗi, bạn không có quyền sử dụng bot này.")
         return
 
-    await update.message.reply_text(
-        "👋 *Tara Bot — Săn giá, tìm deal*\n\n"
-        "Mình có thể:\n"
-        "✈️ Tìm vé máy bay: *\"vé SG Đà Nẵng cuối tuần\"*\n"
-        "🛒 So sánh giá: *\"iPhone 16 giá bao nhiêu\"*\n\n"
-        "Thử đi ạ!",
-        parse_mode="Markdown",
-    )
-
-
-async def handle_message(update: Update, _context) -> None:
-    if not authorize(update):
-        return
-
-    uid = update.effective_user.id
-    text = update.message.text.strip()
-
-    if not text:
-        return
-
-    log.info(f"[{uid}] {text}")
-
-    # Show typing while thinking
-    await update.message.chat.send_action("typing")
-
+    agent = get_agent(uid)
     try:
-        agent = get_agent(uid)
-        reply = agent.chat(text)
-
-        await update.message.reply_text(reply, parse_mode="Markdown")
+        response = await agent.chat(update.message.text)
+        await update.message.reply_text(response)
     except Exception as e:
-        log.exception("Error processing message")
-        await update.message.reply_text(
-            f"😵 Có lỗi xảy ra: {e}\nThử lại sau nhé!"
-        )
+        log.error(f"Error: {e}")
+        await update.message.reply_text(f"😵 Có lỗi xảy ra. Vui lòng kiểm tra lại API Key trên Render.")
 
-
-async def reset(update: Update, _context) -> None:
-    """Reset conversation history."""
-    if not authorize(update):
-        return
-    uid = update.effective_user.id
-    if uid in sessions:
-        del sessions[uid]
-    await update.message.reply_text("🔄 Đã reset conversation.")
-
-
-async def uptime(update: Update, _context) -> None:
-    """Show a simple health check — useful for monitoring."""
-    if not authorize(update):
-        return
-    await update.message.reply_text(
-        f"✅ Tara Bot đang chạy | "
-        f"{len(sessions)} active session(s)"
-    )
-
-
-# ── Health check HTTP server (for Fly.io) ─────────────────────────────
-
-class HealthHandler(BaseHTTPRequestHandler):
-    """Minimal health endpoint so Fly.io doesn't kill the machine."""
-
-    def do_GET(self) -> None:
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"ok")
-
-    def log_message(self, fmt, *args) -> None:
-        pass  # silence log spam
-
-
-def run_health_server() -> None:
-    server = HTTPServer(("0.0.0.0", 8080), HealthHandler)
-    log.info("Health server listening on :8080")
-    server.serve_forever()
-
-
-# ── Main ─────────────────────────────────────────────────────────────
-
-def main() -> None:
-    token = Config.telegram_token
-    if not token:
-        raise SystemExit("TELEGRAM_TOKEN not set")
-
-    # Start health server in background thread for Fly.io
-    t = threading.Thread(target=run_health_server, daemon=True)
-    t.start()
-
-    app = Application.builder().token(token).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("reset", reset))
-    app.add_handler(CommandHandler("uptime", uptime))
-    app.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-    )
-
-    log.info("🚀 Tara Bot started")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    if not config.telegram_token:
+        log.error("TELEGRAM_TOKEN is not set!")
+    else:
+        app = ApplicationBuilder().token(config.telegram_token).build()
+        app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+        log.info("Bot is running...")
+        app.run_polling()
