@@ -197,3 +197,27 @@ tara-bot/
 MIT — free to use, fork, modify.
 
 > *Tara Bot — build public để chia sẻ và học hỏi, không phải product thương mại.*
+
+
+## Các repo khác của mình
+
+Nếu bạn làm growth marketing hoặc quan tâm đến AI agent cho công việc thực tế:
+
+| Repo | Mô tả |
+|------|-------|
+| [ai-growth-agents-for-marketers](https://github.com/thaolst/ai-growth-agents-for-marketers) | Prompts và Python agents cho campaign brief, MEU planning, A/B test — build từ campaign fintech thực tế |
+| [growth-mcp](https://github.com/thaolst/growth-mcp) | MCP server cho growth marketing — cài bằng `pip install growth-mcp` |
+| [ai-growth-prompts](https://github.com/thaolst/ai-growth-prompts) | Prompt collection cho voucher design, segmentation, game mechanics |
+
+---
+
+## Other repos
+
+If you work in growth marketing or are interested in AI agents for real work:
+
+| Repo | Description |
+|------|-------------|
+| [ai-growth-agents-for-marketers](https://github.com/thaolst/ai-growth-agents-for-marketers) | Prompts and Python agents for campaign brief, MEU planning, A/B test — built from real fintech campaigns |
+| [growth-mcp](https://github.com/thaolst/growth-mcp) | MCP server for growth marketing — install with `pip install growth-mcp` |
+| [ai-growth-prompts](https://github.com/thaolst/ai-growth-prompts) | Prompt collection for voucher design, segmentation, game mechanics |
+
