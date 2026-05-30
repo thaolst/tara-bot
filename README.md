@@ -12,8 +12,6 @@
 
 > Build bởi **Lê Song Tiên Thảo** · [GitHub](https://github.com/thaolst) · [LinkedIn](https://www.linkedin.com/in/thaolst/) · [Facebook](https://www.facebook.com/LeSongTienThao)
 
----
-
 ## ✨ Tính năng
 
 | Tính năng | Mô tả | Trạng thái |
@@ -34,8 +32,6 @@
 | 🆕 **Shopee cào giá** | | 🔜 |
 | 🔔 **Auto-deal alert** | Notify khi giá rẻ hơn ngưỡng đặt | 🔜 |
 | 👥 **Multi-user** | | 🔜 |
-
----
 
 ## 🎬 Demo
 
@@ -70,8 +66,6 @@
        ⭐⭐⭐⭐ 4.7 (1,890 đánh giá)
 ```
 
----
-
 ## 🧱 Tech stack
 
 ```
@@ -100,8 +94,6 @@
 | **Host** | Fly.io free tier, region Singapore |
 | **Scheduler** | GitHub Actions cron, 9AM Vietnam (UTC+7) |
 | **Language** | Python 3.11+ |
-
----
 
 ## 🚀 Deploy trong 5 phút
 
@@ -143,8 +135,6 @@ fly deploy
 
 *Chi tiết đầy đủ: [DEPLOY.md](./DEPLOY.md)*
 
----
-
 ## ⚙️ Cấu hình
 
 | Env var | Bắt buộc | Mô tả |
@@ -155,8 +145,6 @@ fly deploy
 | `SERPAPI_KEY` | ✅ | SerpAPI key cho Flights + Shopping |
 | `TELEGRAM_CHAT_ID` | ✅ | Chat ID nhận daily monitor (thường = ALLOWED_USER_ID) |
 | `AFFILIATE_TEMPLATE` | ❌ | Template URL affiliate (coming soon) |
-
----
 
 ## 📁 Cấu trúc
 
@@ -178,8 +166,6 @@ tara-bot/
 └── CHANGELOG.md
 ```
 
----
-
 ## 💰 Chi phí
 
 | Service | Cost | Ghi chú |
@@ -189,8 +175,6 @@ tara-bot/
 | Anthropic | ~$0.50/tháng | Prompt caching giảm ~90% cost |
 | GitHub Actions | $0 | Public repo free |
 | **Tổng** | **~$0.50/tháng** | |
-
----
 
 ## 🗺️ Roadmap
 
@@ -208,12 +192,8 @@ tara-bot/
 - [ ] Auto-deal alert (notify khi giá rẻ hơn ngưỡng)
 - [ ] Multi-user support
 
----
-
 ## 📝 License
 
 MIT — free to use, fork, modify.
-
----
 
 > *Tara Bot — build public để chia sẻ và học hỏi, không phải product thương mại.*
