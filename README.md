@@ -11,6 +11,8 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-60a5fa?style=flat-square)](https://python.org)
 
 > Build bởi **Lê Song Tiên Thảo** · [GitHub](https://github.com/thaolst) · [LinkedIn](https://www.linkedin.com/in/thaolst/) · [Facebook](https://www.facebook.com/LeSongTienThao)
+>
+> Đây là side project. Repo chính của mình về AI x growth marketing: [growth-mcp](https://github.com/thaolst/growth-mcp) (MCP server, `pip install growth-mcp`) và [ai-growth-prompts](https://github.com/thaolst/ai-growth-prompts).
 
 ## ✨ Tính năng
 
@@ -206,7 +208,7 @@ Nếu bạn làm growth marketing hoặc quan tâm đến AI agent cho công vi�
 | Repo | Mô tả |
 |------|-------|
 | [ai-growth-agents-for-marketers](https://github.com/thaolst/ai-growth-agents-for-marketers) | Prompts và Python agents cho campaign brief, MEU planning, A/B test — build từ campaign fintech thực tế |
-| [growth-mcp](https://github.com/thaolst/growth-mcp) | MCP server cho growth marketing — cài bằng `pip install growth-mcp` |
+| [growth-mcp](https://github.com/thaolst/growth-mcp) | MCP server cho growth marketing, có CSV data layer phân tích A/B test và retention từ data thật — `pip install growth-mcp` |
 | [ai-growth-prompts](https://github.com/thaolst/ai-growth-prompts) | Prompt collection cho voucher design, segmentation, game mechanics |
 
 ---
@@ -218,6 +220,6 @@ If you work in growth marketing or are interested in AI agents for real work:
 | Repo | Description |
 |------|-------------|
 | [ai-growth-agents-for-marketers](https://github.com/thaolst/ai-growth-agents-for-marketers) | Prompts and Python agents for campaign brief, MEU planning, A/B test — built from real fintech campaigns |
-| [growth-mcp](https://github.com/thaolst/growth-mcp) | MCP server for growth marketing — install with `pip install growth-mcp` |
+| [growth-mcp](https://github.com/thaolst/growth-mcp) | MCP server for growth marketing with a CSV data layer for A/B test and retention analysis on real data — `pip install growth-mcp` |
 | [ai-growth-prompts](https://github.com/thaolst/ai-growth-prompts) | Prompt collection for voucher design, segmentation, game mechanics |
 
