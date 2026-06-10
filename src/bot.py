@@ -30,6 +30,7 @@ log = logging.getLogger("tara-bot")
 # ── In-memory sessions ───────────────────────────────────────────────
 
 sessions: dict[int, Agent] = {}
+locks: dict[int, asyncio.Lock] = {}
 
 
 def get_agent(user_id: int) -> Agent:
@@ -37,6 +38,13 @@ def get_agent(user_id: int) -> Agent:
     if user_id not in sessions:
         sessions[user_id] = Agent()
     return sessions[user_id]
+
+
+def get_lock(user_id: int) -> asyncio.Lock:
+    """Per-user lock: 2 message cua cung 1 user phai xu ly tuan tu de khong hong history."""
+    if user_id not in locks:
+        locks[user_id] = asyncio.Lock()
+    return locks[user_id]
 
 
 # ── Authorization ────────────────────────────────────────────────────
@@ -92,7 +100,13 @@ async def handle_message(update: Update, _context) -> None:
 
     try:
         agent = get_agent(uid)
-        reply = agent.chat(text)
+
+        # agent.chat la sync (tool-use loop, co the chay vai chuc giay).
+        # Goi truc tiep se block event loop -> bot dung hinh voi moi user khac.
+        # asyncio.to_thread day no sang thread pool, event loop van phuc vu
+        # user khac. Lock per-user giu thu tu message cua cung 1 user.
+        async with get_lock(uid):
+            reply = await asyncio.to_thread(agent.chat, text)
 
         await update.message.reply_text(reply, parse_mode="Markdown")
     except Exception as e:
