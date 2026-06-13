@@ -209,31 +209,56 @@ _WEEKDAY_VN = ["Thu 2", "Thu 3", "Thu 4", "Thu 5", "Thu 6", "Thu 7", "Chu Nhat"]
 
 def get_lucky_dates(
     birth_date: str,
+    birth_time: str | None = None,
     from_date: str | None = None,
     days: int = 14,
 ) -> str:
     """
-    Tinh ngay gio tot cho user dua tren ngay sinh.
+    Tinh ngay gio tot cho user dua tren thong tin sinh.
+
+    Input linh hoat - thieu thong tin van cho ket qua, do chi tiet tang dan:
+      - Chi nam (YYYY)          -> tinh theo con giap (chi tuoi)
+      - Du ngay (YYYY-MM-DD)    -> tinh them Nhat Tru (Can Chi ngay sinh), hop chinh xac hon
+      - Them gio sinh (HH:MM)   -> ghi nhan du Tu Tru, goi y gio Hoang Dao hop hon
 
     Args:
-        birth_date: Ngay sinh YYYY-MM-DD hoac YYYY
+        birth_date: YYYY hoac YYYY-MM-DD
+        birth_time: HH:MM (tuy chon)
         from_date:  Bat dau xem tu ngay nao (YYYY-MM-DD), mac dinh hom nay
-        days:       So ngay xem phia truoc (mac dinh 14)
+        days:       So ngay xem (mac dinh 14, toi da 30)
 
     Returns:
-        Formatted string cho Telegram.
+        Formatted string cho Telegram, luon kem disclaimer.
     """
-    # Parse birth_date
+    days = max(1, min(30, days))
+
+    # Parse birth - linh hoat
+    birth_full: date | None = None
+    detail = "year"  # year | date | datetime
     try:
-        if len(birth_date) == 4:
-            birth_year = int(birth_date)
+        bd = birth_date.strip()
+        if len(bd) == 4:
+            birth_year = int(bd)
         else:
-            birth_year = date.fromisoformat(birth_date).year
+            birth_full = date.fromisoformat(bd)
+            birth_year = birth_full.year
+            detail = "date"
     except Exception:
-        return "Khong doc duoc ngay sinh. Vui long nhap dinh dang YYYY-MM-DD hoac YYYY."
+        return "Khong doc duoc ngay sinh. Ban nhap nam (vi du 1995) hoac ngay day du (1995-03-15) cung duoc."
+
+    if birth_time and birth_full:
+        detail = "datetime"
 
     chi_tuoi = _chi_of_birth_year(birth_year)
     animal_tuoi = CHI_ANIMAL[chi_tuoi]
+
+    # Nhat Tru - Can Chi ngay sinh (chinh xac hon chi tuoi nam)
+    nhat_tru = None
+    chi_compare = chi_tuoi  # mac dinh so theo chi tuoi
+    if birth_full:
+        can_s, chi_s = _can_chi_of_date(birth_full)
+        nhat_tru = (can_s, chi_s)
+        chi_compare = chi_s  # uu tien so Nhat Tru khi co
 
     start = date.fromisoformat(from_date) if from_date else date.today()
     results: list[DayInfo] = []
@@ -241,8 +266,8 @@ def get_lucky_dates(
     for i in range(days):
         d = start + timedelta(days=i)
         can, chi = _can_chi_of_date(d)
-        score = _day_score(can, chi, chi_tuoi)
-        rel = _relation(chi_tuoi, chi)
+        score = _day_score(can, chi, chi_compare)
+        rel = _relation(chi_compare, chi)
         lucky_hrs = _lucky_hours(chi)
         wd = _WEEKDAY_VN[d.weekday()]
         note = _build_note(can, chi, rel, score)
@@ -256,7 +281,7 @@ def get_lucky_dates(
             note=note,
         ))
 
-    return _format_output(results, chi_tuoi, animal_tuoi, birth_year)
+    return _format_output(results, chi_tuoi, animal_tuoi, birth_year, detail, nhat_tru, birth_time)
 
 
 def _build_note(can: str, chi: str, rel: str, score: int) -> str:
@@ -308,13 +333,29 @@ def _level_word(score: int) -> str:
     return "nen tranh"
 
 
-def _format_output(days: list[DayInfo], chi_tuoi: str, animal: str, birth_year: int) -> str:
+def _format_output(
+    days: list[DayInfo],
+    chi_tuoi: str,
+    animal: str,
+    birth_year: int,
+    detail: str = "year",
+    nhat_tru: tuple | None = None,
+    birth_time: str | None = None,
+) -> str:
     good_days = [d for d in days if d.score >= 65]
     start_str = days[0].date_str
     end_str = days[-1].date_str
 
     lines = []
-    lines.append(f"Tuoi {chi_tuoi} {animal} ({birth_year}), minh xem ngay xuat hanh tu {start_str} den {end_str} cho ban.")
+    # Mo dau - phan anh do chi tiet cua input
+    if detail == "year":
+        lines.append(f"Tuoi {chi_tuoi} {animal} ({birth_year}), minh xem ngay xuat hanh tu {start_str} den {end_str} cho ban.")
+    elif detail == "date" and nhat_tru:
+        lines.append(f"Ngay sinh cua ban roi vao ngay {nhat_tru[0]} {nhat_tru[1]} {CHI_ANIMAL[nhat_tru[1]]} (Nhat Tru), tuoi {chi_tuoi} {animal}.")
+        lines.append(f"Minh xem ngay xuat hanh tu {start_str} den {end_str}, so theo Nhat Tru cho chinh xac hon.")
+    else:  # datetime
+        lines.append(f"Ban sinh ngay {nhat_tru[0]} {nhat_tru[1]} {CHI_ANIMAL[nhat_tru[1]]} (Nhat Tru), gio {birth_time}, tuoi {chi_tuoi} {animal}.")
+        lines.append(f"Du thong tin Tu Tru roi. Minh xem ngay xuat hanh tu {start_str} den {end_str} cho ban.")
     lines.append("")
 
     if good_days:
@@ -342,5 +383,9 @@ def _format_output(days: list[DayInfo], chi_tuoi: str, animal: str, birth_year: 
         lines.append("")
 
     lines.append("Ban muon minh tim ve may bay cho ngay nao trong so nay khong?")
+    lines.append("")
+    lines.append("Luu y: day chi la tham khao theo lich can chi truyen thong, khong phai du bao co co so khoa hoc. Ban cu chon ngay tien cho minh nhe.")
+
+    return "\n".join(lines)
 
     return "\n".join(lines)
