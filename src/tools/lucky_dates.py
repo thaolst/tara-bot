@@ -278,57 +278,69 @@ def _build_note(can: str, chi: str, rel: str, score: int) -> str:
         prefix = "Nen can nhac"
     else:
         prefix = "Tranh neu duoc"
-    return f"{prefix}. {base}".strip(". ")
+    if base:
+        return f"{prefix}, {base.lower()}"
+    return prefix
 
 
-def _score_bar(score: int) -> str:
-    filled = round(score / 10)
-    return "█" * filled + "░" * (10 - filled)
+def _level_emoji(score: int) -> str:
+    """Emoji muc do thay cho thanh diem so."""
+    if score >= 80:
+        return "🟢"  # rat tot
+    if score >= 65:
+        return "🟢"  # tot
+    if score >= 50:
+        return "🟡"  # binh thuong
+    if score >= 35:
+        return "🟠"  # nen can nhac
+    return "🔴"       # tranh
+
+
+def _level_word(score: int) -> str:
+    if score >= 80:
+        return "rat tot"
+    if score >= 65:
+        return "tot"
+    if score >= 50:
+        return "binh thuong"
+    if score >= 35:
+        return "nen can nhac"
+    return "nen tranh"
 
 
 def _format_output(days: list[DayInfo], chi_tuoi: str, animal: str, birth_year: int) -> str:
-    lines = []
-    lines.append(f"Tu vi xuat hanh cho tuoi {chi_tuoi} {animal} ({birth_year})")
-    lines.append("")
-
-    # Loc ngay tot (score >= 65) va sort
     good_days = [d for d in days if d.score >= 65]
-    all_days = days
+    start_str = days[0].date_str
+    end_str = days[-1].date_str
 
-    if not good_days:
-        lines.append("Trong " + str(len(days)) + " ngay toi khong co ngay qua tot.")
-        lines.append("Chon ngay co diem cao nhat ben duoi.")
-
-    lines.append(f"Xem {len(all_days)} ngay tu {all_days[0].date_str} den {all_days[-1].date_str}")
+    lines = []
+    lines.append(f"Tuoi {chi_tuoi} {animal} ({birth_year}), minh xem ngay xuat hanh tu {start_str} den {end_str} cho ban.")
     lines.append("")
 
-    # Hien thi tat ca, highlight ngay tot
-    for d in all_days:
-        bar = _score_bar(d.score)
-        is_good = d.score >= 65
-        star = "OK" if is_good else "  "
-        lines.append(
-            f"{star} {d.date_str} ({d.weekday}) - {d.can} {d.chi} {CHI_ANIMAL[d.chi]}"
-        )
-        lines.append(f"   [{bar}] {d.score}/100 - {d.note}")
-
-        if is_good:
-            gio_list = ", ".join(
-                f"{g['chi']} {g['animal']} ({g['time']})"
-                for g in d.lucky_hours[:3]  # chi hien 3 gio dau
-            )
-            lines.append(f"   Gio Hoang Dao: {gio_list}")
+    if good_days:
+        top = sorted(good_days, key=lambda x: x.score, reverse=True)
+        best = top[0]
+        gio = ", ".join(f"{g['time']} ({g['chi']} {g['animal']})" for g in best.lucky_hours[:3])
+        lines.append(f"Ngay dep nhat la {best.date_str} ({best.weekday}), ngay {best.can} {best.chi} {CHI_ANIMAL[best.chi]} - {best.note.lower()}.")
+        lines.append(f"Gio tot trong ngay do: {gio}.")
         lines.append("")
 
-    # Goi y tom tat
-    top3 = sorted(good_days, key=lambda x: x.score, reverse=True)[:3]
-    if top3:
-        lines.append("Top ngay nen chon:")
-        for d in top3:
-            lines.append(
-                f"  - {d.date_str} ({d.weekday}) diem {d.score}/100"
-            )
+        if len(top) > 1:
+            lines.append("May ngay khac cung dep neu ban can lui lich:")
+            for d in top[1:4]:
+                lines.append(f"{_level_emoji(d.score)} {d.date_str} ({d.weekday}) - ngay {d.chi} {CHI_ANIMAL[d.chi]}, {_level_word(d.score)}")
+            lines.append("")
+    else:
+        lines.append("Trong khoang nay khong co ngay that su dep, nhung van co the di duoc.")
         lines.append("")
-        lines.append("Hoi them gio cu the de xem gio tot trong ngay do.")
+
+    # Cac ngay nen tranh (score thap)
+    bad_days = [d for d in days if d.score < 50]
+    if bad_days:
+        bad_str = ", ".join(f"{d.date_str} ({d.weekday})" for d in bad_days[:4])
+        lines.append(f"Nen tranh hoac can than: {bad_str}.")
+        lines.append("")
+
+    lines.append("Ban muon minh tim ve may bay cho ngay nao trong so nay khong?")
 
     return "\n".join(lines)
