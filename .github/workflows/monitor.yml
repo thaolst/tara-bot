@@ -1,8 +1,8 @@
 name: Flight Monitor
 
 on:
-  schedule:
-    - cron: "0 2 * * *"  # 9AM Vietnam (UTC+7)
+  # schedule:
+  #   - cron: "0 2 * * *"  # 9AM Vietnam (UTC+7) - tam tat de tiet kiem SerpAPI quota
   workflow_dispatch:      # cho phép chạy tay
 
 jobs:
