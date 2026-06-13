@@ -207,6 +207,39 @@ class DayInfo(NamedTuple):
 _WEEKDAY_VN = ["Thu 2", "Thu 3", "Thu 4", "Thu 5", "Thu 6", "Thu 7", "Chu Nhat"]
 
 
+def _resolve_person(birth_date: str) -> dict | None:
+    """Tu birth_date linh hoat -> chi de so sanh + thong tin hien thi.
+
+    Returns None neu khong parse duoc.
+    """
+    try:
+        bd = birth_date.strip()
+        if len(bd) == 4:
+            year = int(bd)
+            chi_tuoi = _chi_of_birth_year(year)
+            return {
+                "label": bd,
+                "year": year,
+                "chi_tuoi": chi_tuoi,
+                "chi_compare": chi_tuoi,
+                "nhat_tru": None,
+                "detail": "year",
+            }
+        bf = date.fromisoformat(bd)
+        chi_tuoi = _chi_of_birth_year(bf.year)
+        can_s, chi_s = _can_chi_of_date(bf)
+        return {
+            "label": bd,
+            "year": bf.year,
+            "chi_tuoi": chi_tuoi,
+            "chi_compare": chi_s,  # uu tien Nhat Tru
+            "nhat_tru": (can_s, chi_s),
+            "detail": "date",
+        }
+    except Exception:
+        return None
+
+
 def get_lucky_dates(
     birth_date: str,
     birth_time: str | None = None,
@@ -387,5 +420,107 @@ def _format_output(
     lines.append("Luu y: day chi la tham khao theo lich can chi truyen thong, khong phai du bao co co so khoa hoc. Ban cu chon ngay tien cho minh nhe.")
 
     return "\n".join(lines)
+
+
+def get_lucky_dates_group(
+    birth_dates: list[str],
+    from_date: str | None = None,
+    days: int = 14,
+) -> str:
+    """
+    Tim ngay xuat hanh hop cho mot nhom (2-5 nguoi cung di).
+
+    Quy tac:
+      - Moi ngay tinh quan he voi tung nguoi.
+      - Neu BAT KY ai bi Luc Xung -> loai ngay do (an toan nhat).
+      - Diem nhom = diem THAP NHAT trong nhom (phan anh nguoi yeu nhat, khong che giau).
+      - Hien top ngay con lai + ghi chu ai hop nhat.
+
+    Args:
+        birth_dates: list nam sinh hoac ngay sinh (moi phan tu YYYY hoac YYYY-MM-DD)
+        from_date:   bat dau xem (YYYY-MM-DD), mac dinh hom nay
+        days:        so ngay xem (mac dinh 14, toi da 30)
+    """
+    days = max(1, min(30, days))
+
+    people = []
+    for bd in birth_dates:
+        p = _resolve_person(bd)
+        if p:
+            people.append(p)
+
+    if not people:
+        return "Chua doc duoc thong tin nguoi nao. Ban gui nam sinh hoac ngay sinh cua moi nguoi nhe."
+
+    if len(people) == 1:
+        # Roi ve che do 1 nguoi
+        return get_lucky_dates(birth_dates[0], from_date=from_date, days=days)
+
+    start = date.fromisoformat(from_date) if from_date else date.today()
+
+    # Mo ta nhom
+    who = ", ".join(p["label"] for p in people)
+    lines = [f"Nhom {len(people)} nguoi ({who}), minh tim ngay hop cho ca nhom."]
+    lines.append("")
+
+    safe_days = []   # khong xung ai
+    for i in range(days):
+        d = start + timedelta(days=i)
+        can, chi = _can_chi_of_date(d)
+
+        # Tinh quan he tung nguoi
+        rels = [(p, _relation(p["chi_compare"], chi)) for p in people]
+        has_xung = any(r == "xung" for _, r in rels)
+        if has_xung:
+            continue  # loai ngay xung bat ky ai
+
+        scores = [_day_score(can, chi, p["chi_compare"]) for p in people]
+        group_score = min(scores)  # nguoi yeu nhat quyet dinh
+
+        # Ai hop nhat (tam_hop hoac hop)
+        good_for = [p["label"] for p, r in rels if r in ("tam_hop", "hop")]
+
+        safe_days.append({
+            "date": d.isoformat(),
+            "weekday": _WEEKDAY_VN[d.weekday()],
+            "can": can, "chi": chi,
+            "group_score": group_score,
+            "good_for": good_for,
+            "lucky_hours": _lucky_hours(chi),
+        })
+
+    if not safe_days:
+        lines.append("Trong khoang nay khong co ngay nao tot deu cho ca nhom (deu vuong xung voi it nhat 1 nguoi).")
+        lines.append("Ban thu mo rong khoang ngay, hoac minh xem rieng tung nguoi cung duoc.")
+        lines.append("")
+        lines.append("Luu y: xem ngay cho nhom la cach dung hoa tham khao, khong phai phuong phap tu vi chuan (von xem cho 1 nguoi). Ban cu chon ngay tien nhe.")
+        return "\n".join(lines)
+
+    top = sorted(safe_days, key=lambda x: x["group_score"], reverse=True)
+    best = top[0]
+    gio = ", ".join(f"{g['time']} ({g['chi']} {g['animal']})" for g in best["lucky_hours"][:3])
+
+    lines.append(f"Ngay hop nhat cho ca nhom: {best['date']} ({best['weekday']}), ngay {best['can']} {best['chi']} {CHI_ANIMAL[best['chi']]}, khong xung voi ai.")
+    lines.append(f"Gio tot trong ngay: {gio}.")
+    if best["good_for"]:
+        lines.append(f"Dac biet hop voi: {', '.join(best['good_for'])}.")
+    lines.append("")
+
+    if len(top) > 1:
+        lines.append("May ngay khac cung an toan cho ca nhom:")
+        for d in top[1:5]:
+            extra = f" (hop {', '.join(d['good_for'])})" if d["good_for"] else ""
+            lines.append(f"{_level_emoji(d['group_score'])} {d['date']} ({d['weekday']}) - ngay {d['chi']} {CHI_ANIMAL[d['chi']]}, {_level_word(d['group_score'])}{extra}")
+        lines.append("")
+
+    # Ngay da loai vi xung
+    removed = days - len(safe_days)
+    if removed > 0:
+        lines.append(f"Da bo qua {removed} ngay vi xung voi it nhat mot nguoi trong nhom.")
+        lines.append("")
+
+    lines.append("Ban muon minh tim ve may bay cho ngay nao trong so nay khong?")
+    lines.append("")
+    lines.append("Luu y: xem ngay cho nhom la cach dung hoa tham khao, khong phai phuong phap tu vi chuan (von xem cho 1 nguoi). Ban cu chon ngay tien cho ca nha nhe.")
 
     return "\n".join(lines)
