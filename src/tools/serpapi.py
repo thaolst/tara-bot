@@ -62,11 +62,24 @@ def search_flights(
     }
 
     try:
-        resp = httpx.get(SERPAPI_BASE, params=params, timeout=15)
-        resp.raise_for_status()
+        resp = httpx.get(SERPAPI_BASE, params=params, timeout=30)
         data = resp.json()
+    except httpx.TimeoutException:
+        return "⚠️ SerpAPI timeout (>30s). Thu lai sau it phut."
     except Exception as e:
-        return f"⚠️ Lỗi search flight: {e}"
+        return f"⚠️ Loi ket noi SerpAPI: {type(e).__name__}: {e}"
+
+    # SerpAPI tra loi trong body ke ca khi status 200
+    if "error" in data:
+        err = data["error"]
+        if "run out of searches" in err.lower() or "quota" in err.lower():
+            return "⚠️ SerpAPI het quota thang nay. Check serpapi.com/dashboard."
+        if "invalid api key" in err.lower():
+            return "⚠️ SERPAPI_KEY khong hop le. Check fly secrets."
+        return f"⚠️ SerpAPI error: {err}"
+
+    if resp.status_code != 200:
+        return f"⚠️ SerpAPI HTTP {resp.status_code}: {resp.text[:200]}"
 
     return _format_flights(data, departure_id, arrival_id, outbound, ret)
 
@@ -164,11 +177,23 @@ def search_shopping(query: str, currency: str = "VND") -> str:
     }
 
     try:
-        resp = httpx.get(SERPAPI_BASE, params=params, timeout=15)
-        resp.raise_for_status()
+        resp = httpx.get(SERPAPI_BASE, params=params, timeout=30)
         data = resp.json()
+    except httpx.TimeoutException:
+        return "⚠️ SerpAPI timeout (>30s). Thu lai sau it phut."
     except Exception as e:
-        return f"⚠️ Lỗi search: {e}"
+        return f"⚠️ Loi ket noi SerpAPI: {type(e).__name__}: {e}"
+
+    if "error" in data:
+        err = data["error"]
+        if "run out of searches" in err.lower() or "quota" in err.lower():
+            return "⚠️ SerpAPI het quota thang nay. Check serpapi.com/dashboard."
+        if "invalid api key" in err.lower():
+            return "⚠️ SERPAPI_KEY khong hop le. Check fly secrets."
+        return f"⚠️ SerpAPI error: {err}"
+
+    if resp.status_code != 200:
+        return f"⚠️ SerpAPI HTTP {resp.status_code}: {resp.text[:200]}"
 
     results = data.get("shopping_results", [])
     if not results:
