@@ -1,20 +1,21 @@
-"""Flight search — không dùng SerpAPI, chỉ generate Google Flights/Shopping link.
+"""Flight search — SerpAPI (neu con quota) + fallback link Google Flights/Shopping.
 
-Thay thế SerpAPI free (250/thang) bang link truc tiep:
-- Google Flights: route + date → link
-- Google Shopping: query → link
-- Không ton API, không gioi han, không quota.
+Khong muon bot chi show link ma khong co gia nhu truoc.
+- Uu tien SerpAPI -> co gia + hang + gio bay
+- Neu SerpAPI loi (het quota) -> fallback ve link Google Flights
 """
 
 from __future__ import annotations
 
 from datetime import date, timedelta
+import httpx
+
+from ..config import Config
 
 
 def _get_next_friday() -> str:
-    """Return next Friday as YYYY-MM-DD."""
     today = date.today()
-    days_ahead = (4 - today.weekday()) % 7  # Friday = 4
+    days_ahead = (4 - today.weekday()) % 7
     if days_ahead == 0:
         days_ahead = 7
     return (today + timedelta(days=days_ahead)).isoformat()
@@ -29,6 +30,53 @@ CITY_MAP = {
     "BKK": "Bangkok", "SIN": "Singapore", "KUL": "Kuala Lumpur",
 }
 
+# ── SerpAPI ───────────────────────────────────────────────────────────
+
+SERPAPI_BASE = "https://serpapi.com/search"
+
+
+def _serpapi_search(params: dict) -> dict | None:
+    """Call SerpAPI, return JSON or None on failure."""
+    api_key = Config.serpapi_key
+    if not api_key:
+        return None
+    try:
+        params["api_key"] = api_key
+        r = httpx.get(SERPAPI_BASE, params=params, timeout=15)
+        data = r.json()
+        if "error" in data:
+            return None
+        return data
+    except Exception:
+        return None
+
+
+def _google_flights_link(
+    dep: str, arr: str, out: str, ret: str, curr: str = "VND"
+) -> str:
+    return (
+        f"https://www.google.com/travel/flights?"
+        f"q=Flights+to+{arr}+from+{dep}+on+{out}+return+{ret}&curr={curr}"
+    )
+
+
+def _fallback_flights(
+    dep_id: str, arr_id: str, out: str, ret: str, curr: str
+) -> str:
+    dep_name = CITY_MAP.get(dep_id, dep_id)
+    arr_name = CITY_MAP.get(arr_id, arr_id)
+    gf_link = _google_flights_link(dep_id, arr_id, out, ret, curr)
+    lines = [
+        f"✈️ *{dep_name} → {arr_name}*",
+        f"📅 *{out}* → *{ret}*",
+        "",
+        "Xem giá mới nhất trên Google Flights:",
+        f"👉 [Xem vé]({gf_link})",
+    ]
+    return "\n".join(lines)
+
+
+# ── Public API ────────────────────────────────────────────────────────
 
 def search_flights(
     departure_id: str = "SGN",
@@ -38,80 +86,97 @@ def search_flights(
     adults: int = 1,
     currency: str = "VND",
 ) -> str:
-    """Generate Google Flights search link — no API call.
+    """Search flights — SerpAPI first, fallback Google Flights link."""
+    dep = departure_id.upper()
+    arr = arrival_id.upper()
+    out = outbound_date or _get_next_friday()
+    ret = return_date or (date.fromisoformat(out) + timedelta(days=5)).isoformat()
 
-    Args:
-        departure_id: IATA code (e.g. SGN, HAN, DAD)
-        arrival_id: IATA code of destination
-        outbound_date: YYYY-MM-DD, defaults to next Friday
-        return_date: YYYY-MM-DD, defaults to outbound + 5 days
-        adults: number of passengers
-        currency: VND, USD, etc.
+    dep_name = CITY_MAP.get(dep, dep)
+    arr_name = CITY_MAP.get(arr, arr)
 
-    Returns:
-        Formatted message with Google Flights link
-    """
-    outbound = outbound_date or _get_next_friday()
-    ret = return_date or (
-        date.fromisoformat(outbound) + timedelta(days=5)
-    ).isoformat()
+    # Try SerpAPI first
+    data = _serpapi_search({
+        "engine": "google_flights",
+        "departure_id": dep,
+        "arrival_id": arr,
+        "outbound_date": out,
+        "return_date": ret,
+        "type": "1",  # round trip
+        "adults": str(adults),
+        "currency": currency,
+    })
 
-    dep_name = CITY_MAP.get(departure_id, departure_id)
-    arr_name = CITY_MAP.get(arrival_id, arrival_id)
+    if data is not None:
+        best = data.get("best_flights", [])
+        other = data.get("other_flights", [])
+        all_flights = best + other
 
-    # Build Google Flights URL
-    gf_link = (
-        f"https://www.google.com/travel/flights?"
-        f"q=Flights+to+{arrival_id}+from+{departure_id}"
-        f"+on+{outbound}+return+{ret}"
-        f"&curr={currency}"
-    )
+        if all_flights:
+            lines = [f"✈️ *{dep_name} → {arr_name}*"]
+            lines.append(f"📅 *{out}* → *{ret}* ({len(all_flights)} chuyến)")
+            lines.append("")
 
-    lines = [
-        f"✈️ *{dep_name} → {arr_name}*",
-        f"📅 *{outbound}* → *{ret}*",
-        "",
-        "Mở link này để xem giá vé mới nhất:",
-        f"👉 [Xem trên Google Flights]({gf_link})",
-        "",
-        "💡 *Mẹo:* Dùng filter sắp xếp theo giá thấp nhất "
-        "hoặc thời gian bay ngắn nhất để chọn chuyến phù hợp.",
-        "",
-        "Hoặc bạn có thể đặt trực tiếp trên:",
-        f"• [VietJet Air](https://www.vietjetair.com)",
-        f"• [Vietnam Airlines](https://www.vietnamairlines.com)",
-        f"• [Bamboo Airways](https://www.bambooairways.com)",
-    ]
+            for i, f in enumerate(all_flights[:6], 1):
+                price = f.get("price", "?")
+                flights_data = f.get("flights", [])
+                stops = "Thẳng" if len(flights_data) == 1 else f"{len(flights_data)-1} điểm dừng"
+                emoji = ["🏆", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣"][min(i - 1, 5)]
+                lines.append(
+                    f"{emoji} *{price:,}*" if isinstance(price, int)
+                    else f"{emoji} *{price}*"
+                )
+                for seg in flights_data:
+                    t_dep = seg.get("departure_airport", {}).get("time", "?")[11:16]
+                    t_arr = seg.get("arrival_airport", {}).get("time", "?")[11:16]
+                    al = seg.get("airline", "?")
+                    fn = seg.get("flight_number", "")
+                    dur = seg.get("duration", 0)
+                    lines.append(f"   {t_dep}→{t_arr} ({dur}ph) {al} {fn}")
+                lines.append("")
 
-    if dep_name != arr_name:
-        lines.insert(3, f"🚀 *Khoảng cách:* {dep_name} → {arr_name}")
+            gf_link = _google_flights_link(dep, arr, out, ret, currency)
+            lines.append(f"👉 [Xem thêm trên Google Flights]({gf_link})")
+            return "\n".join(lines)
 
-    return "\n".join(lines)
+    # Fallback
+    return _fallback_flights(dep, arr, out, ret, currency)
 
 
 def search_shopping(query: str, currency: str = "VND") -> str:
-    """Generate Google Shopping search link — no API call.
-
-    Args:
-        query: product name to search
-        currency: currency code
-
-    Returns:
-        Formatted message with Google Shopping link
-    """
+    """Search shopping — SerpAPI first, fallback Google Shopping link."""
     import urllib.parse
-    q_encoded = urllib.parse.quote(query)
 
-    gs_link = f"https://www.google.com/search?tbm=shop&q={q_encoded}&curr={currency}"
+    # Try SerpAPI first
+    data = _serpapi_search({
+        "engine": "google_shopping",
+        "q": query,
+    })
 
-    lines = [
-        f"🛒 *{query}*",
-        "",
-        "Mở link này để so sánh giá:",
-        f"👉 [Xem trên Google Shopping]({gs_link})",
-        "",
-        "💡 *Mẹo:* Lọc theo khoảng giá, đánh giá, hoặc chọn "
-        "'Miễn phí vận chuyển' để tìm deal tốt nhất.",
-    ]
+    if data is not None:
+        results = data.get("shopping_results", [])
+        if results:
+            lines = [f"🛒 *{query}* ({len(results)} kết quả)"]
+            for i, r in enumerate(results[:6], 1):
+                title = r.get("title", "?")
+                price = r.get("price", "?")
+                source = r.get("source", "")
+                rating = r.get("rating", "")
+                reviews = r.get("reviews", "")
+                emoji = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣"][min(i - 1, 5)]
+                line = f"{emoji} {title}"
+                if price:
+                    line += f" 💰 *{price}*"
+                if source:
+                    line += f" — {source}"
+                if rating:
+                    line += f" ⭐{rating}"
+                    if reviews:
+                        line += f" ({reviews} đánh giá)"
+                lines.append(line)
+            return "\n".join(lines)
 
-    return "\n".join(lines)
+    # Fallback
+    q = urllib.parse.quote(query)
+    gs_link = f"https://www.google.com/search?tbm=shop&q={q}"
+    return f"🛒 *{query}*\n\n👉 [Xem trên Google Shopping]({gs_link})"
