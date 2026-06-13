@@ -20,7 +20,7 @@ from openai import OpenAI
 
 from .config import Config
 from .tools.serpapi import search_flights, search_shopping
-from .tools.lucky_dates import get_lucky_dates
+from .tools.lucky_dates import get_lucky_dates, get_lucky_dates_group
 
 # ── System prompt - FROZEN (Anthropic cache) ──────────────────────────
 
@@ -36,9 +36,10 @@ NGUYEN TAC:
 
 XEM NGAY GIO TOT (get_lucky_dates) - CHI KHI USER CHU DONG HOI:
 - CHI goi get_lucky_dates khi user hoi ro rang ve: ngay tot, gio tot, xem ngay, hop tuoi, xuat hanh, nen di ngay nao.
+- Neu co NHIEU nguoi cung di (gia dinh, ban be, nhom 2-5 nguoi) -> dung get_lucky_dates_group, truyen list birth_dates.
 - KHONG tu dong xem ngay khi user chi hoi ve may bay. Vi du "tim ve di Da Nang cuoi tuan" -> chi goi search_flights, KHONG xem ngay.
 - Neu user hoi ket hop ("xem ngay tot roi tim ve di [noi X]"):
-  1. Goi get_lucky_dates truoc de biet ngay tot
+  1. Goi get_lucky_dates (hoac _group neu nhieu nguoi) truoc de biet ngay tot
   2. Goi search_flights cho ngay tot nhat
   3. Tong hop: "Ngay [X] tot nhat cho ban, ve ngay do gia [Y]"
 
@@ -116,11 +117,41 @@ LUCKY_DATE_TOOL: dict[str, Any] = {
     },
 }
 
-ALL_TOOLS = [FLIGHT_TOOL, SHOPPING_TOOL, LUCKY_DATE_TOOL]
+LUCKY_GROUP_TOOL: dict[str, Any] = {
+    "name": "get_lucky_dates_group",
+    "description": (
+        "Xem ngay xuat hanh hop cho NHIEU nguoi cung di (2-5 nguoi: gia dinh, ban be, nhom). "
+        "CHI goi khi user chu dong hoi ngay tot VA cung cap thong tin nhieu nguoi. "
+        "Tu dong loai ngay xung voi bat ky ai, tim ngay an toan cho ca nhom."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "birth_dates": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List nam sinh hoac ngay sinh cua moi nguoi. "
+                               "Moi phan tu la YYYY hoac YYYY-MM-DD. Tron lan cung duoc.",
+            },
+            "from_date": {
+                "type": "string",
+                "description": "Bat dau xem tu ngay nao (YYYY-MM-DD). Mac dinh hom nay.",
+            },
+            "days": {
+                "type": "integer",
+                "description": "So ngay can xem (mac dinh 14, toi da 30).",
+            },
+        },
+        "required": ["birth_dates"],
+    },
+}
+
+ALL_TOOLS = [FLIGHT_TOOL, SHOPPING_TOOL, LUCKY_DATE_TOOL, LUCKY_GROUP_TOOL]
 TOOL_FUNCTIONS: dict[str, Any] = {
     "search_flights":  search_flights,
     "search_shopping": search_shopping,
     "get_lucky_dates": get_lucky_dates,
+    "get_lucky_dates_group": get_lucky_dates_group,
 }
 MAX_TOOL_ITERATIONS = 6  # tang len vi co the goi 2 tool lien tiep (lucky + flights)
 
