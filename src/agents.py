@@ -1,12 +1,9 @@
-"""Claude agent with tool-calling — Tara v2.
+"""Claude agent with tool-calling - Tara v3.
 
-Upgrade từ so sánh với ota_planner (anh Tiến):
-- Prompt caching: cache_control ephemeral trên system prompt (frozen)
-- Adaptive thinking: Claude tự quyết khi nào dùng extended thinking
-- Streaming: messages.stream() thay vì messages.create()
-- Bug fix: lưu response.content (list of blocks) vào history, không phải reply_text (string)
-- max_tokens tăng lên 16000 để đủ chỗ cho thinking blocks
-- Dynamic content (TODAY) inject vào user message, không vào system prompt
+Them so voi v2:
+- get_lucky_dates tool: xem ngay gio tot theo Am Lich (Can Chi, Hoang Dao, xung hop tuoi)
+- User profile (birth_date) luu trong session - hoi 1 lan, dung mai
+- System prompt mo rong: huong dan Claude ket hop lucky dates + search flights
 """
 
 from __future__ import annotations
@@ -23,39 +20,51 @@ from openai import OpenAI
 
 from .config import Config
 from .tools.serpapi import search_flights, search_shopping
+from .tools.lucky_dates import get_lucky_dates
 
-# ── System prompt — FROZEN (Anthropic cache) ──────────────────────────
-# cache_control: ephemeral nhắm vào block này.
-# KHÔNG đặt dynamic content (ngày, tên user) vào đây —
-# bất kỳ thay đổi nào sẽ invalidate cache cho đến request tiếp theo.
+# ── System prompt - FROZEN (Anthropic cache) ──────────────────────────
 
-SYSTEM_PROMPT = """Bạn là Tara Bot — agent thông minh chuyên tìm vé máy bay và săn giá đồ.
+SYSTEM_PROMPT = """Ban la Tara Bot - agent thong minh chuyen tim ve may bay, san gia do, va xem ngay gio tot.
 
-NGUYÊN TẮC:
-- Trả lời bằng tiếng Việt tự nhiên, thân thiện.
-- Khi user hỏi vé máy bay, gọi tool search_flights.
-- Khi user hỏi giá sản phẩm, gọi tool search_shopping.
-- Sau khi tool trả kết quả, chuyển tiếp NGUYÊN VĂN kết quả đó cho user, chỉ thêm 1-2 câu ngắn.
-- KHÔNG reformat lại kết quả từ tool.
-- Có thể nói chuyện thông thường — không cần gọi tool.
+NGUYEN TAC:
+- Tra loi bang tieng Viet tu nhien, than thien.
+- Khi user hoi ve may bay, goi tool search_flights.
+- Khi user hoi gia san pham, goi tool search_shopping.
+- Sau khi tool tra ket qua, chuyen tiep NGUYEN VAN ket qua do cho user, chi them 1-2 cau ngan.
+- KHONG reformat lai ket qua tu tool.
+- Co the noi chuyen thong thuong - khong can goi tool.
 
-Mặc định cho câu hỏi mơ hồ về thời gian:
-- "cuối tuần" → thứ Sáu tuần gần nhất (không quá khứ)
-- "tuần sau" → tuần tiếp theo"""
+XEM NGAY GIO TOT (get_lucky_dates) - CHI KHI USER CHU DONG HOI:
+- CHI goi get_lucky_dates khi user hoi ro rang ve: ngay tot, gio tot, xem ngay, hop tuoi, xuat hanh, nen di ngay nao.
+- KHONG tu dong xem ngay khi user chi hoi ve may bay. Vi du "tim ve di Da Nang cuoi tuan" -> chi goi search_flights, KHONG xem ngay.
+- Neu user hoi ket hop ("xem ngay tot roi tim ve di [noi X]"):
+  1. Goi get_lucky_dates truoc de biet ngay tot
+  2. Goi search_flights cho ngay tot nhat
+  3. Tong hop: "Ngay [X] tot nhat cho ban, ve ngay do gia [Y]"
+
+USER PROFILE:
+- Neu tool get_lucky_dates can birth_date nhung chua co trong lich su hoi thoai, hoi user: 
+  "Ban sinh nam nao? (de minh tinh ngay hop tuoi cho chinh xac)"
+- Sau khi biet birth_date, ghi nho va su dung cho cac lan sau trong cung cuoc tro chuyen.
+
+MAC DINH CHO CAU HOI MO HO VE THOI GIAN:
+- "cuoi tuan" -> thu Sau tuan gan nhat (khong qua khu)
+- "tuan sau" -> tuan tiep theo
+- "thang toi" -> tu ngay 1 thang sau"""
 
 # ── Tool definitions ──────────────────────────────────────────────────
 
 FLIGHT_TOOL: dict[str, Any] = {
     "name": "search_flights",
-    "description": "Tìm chuyến bay. Trả về giá, hãng, giờ bay.",
+    "description": "Tim chuyen bay. Tra ve gia, hang, gio bay.",
     "input_schema": {
         "type": "object",
         "properties": {
-            "departure_id":  {"type": "string", "description": "Mã sân bay đi (IATA). Mặc định SGN"},
-            "arrival_id":    {"type": "string", "description": "Mã sân bay đến (IATA)"},
-            "outbound_date": {"type": "string", "description": "Ngày đi (YYYY-MM-DD)"},
-            "return_date":   {"type": "string", "description": "Ngày về (YYYY-MM-DD)"},
-            "adults":        {"type": "integer", "description": "Số người lớn. Mặc định 1"},
+            "departure_id":  {"type": "string", "description": "Ma san bay di (IATA). Mac dinh SGN"},
+            "arrival_id":    {"type": "string", "description": "Ma san bay den (IATA)"},
+            "outbound_date": {"type": "string", "description": "Ngay di (YYYY-MM-DD)"},
+            "return_date":   {"type": "string", "description": "Ngay ve (YYYY-MM-DD)"},
+            "adults":        {"type": "integer", "description": "So nguoi lon. Mac dinh 1"},
         },
         "required": ["arrival_id"],
     },
@@ -63,22 +72,51 @@ FLIGHT_TOOL: dict[str, Any] = {
 
 SHOPPING_TOOL: dict[str, Any] = {
     "name": "search_shopping",
-    "description": "Tìm sản phẩm, so sánh giá.",
+    "description": "Tim san pham, so sanh gia.",
     "input_schema": {
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Tên sản phẩm cần tìm"},
+            "query": {"type": "string", "description": "Ten san pham can tim"},
         },
         "required": ["query"],
     },
 }
 
-ALL_TOOLS = [FLIGHT_TOOL, SHOPPING_TOOL]
+LUCKY_DATE_TOOL: dict[str, Any] = {
+    "name": "get_lucky_dates",
+    "description": (
+        "Xem ngay gio tot/xau theo Am Lich. CHI goi khi user CHU DONG hoi ve ngay tot, "
+        "gio tot, xem ngay, hop tuoi, xuat hanh. KHONG tu dong goi khi user chi tim ve may bay. "
+        "Tinh Can Chi ngay, gio Hoang Dao, moi quan he voi tuoi user (Luc Hop, Tam Hop, Luc Xung)."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "birth_date": {
+                "type": "string",
+                "description": "Nam sinh hoac ngay sinh day du (YYYY hoac YYYY-MM-DD). "
+                               "Lay tu lich su hoi thoai neu co. Neu chua co, hoi user truoc.",
+            },
+            "from_date": {
+                "type": "string",
+                "description": "Bat dau xem tu ngay nao (YYYY-MM-DD). Mac dinh hom nay.",
+            },
+            "days": {
+                "type": "integer",
+                "description": "So ngay can xem (mac dinh 14, toi da 30).",
+            },
+        },
+        "required": ["birth_date"],
+    },
+}
+
+ALL_TOOLS = [FLIGHT_TOOL, SHOPPING_TOOL, LUCKY_DATE_TOOL]
 TOOL_FUNCTIONS: dict[str, Any] = {
     "search_flights":  search_flights,
     "search_shopping": search_shopping,
+    "get_lucky_dates": get_lucky_dates,
 }
-MAX_TOOL_ITERATIONS = 5
+MAX_TOOL_ITERATIONS = 6  # tang len vi co the goi 2 tool lien tiep (lucky + flights)
 
 
 # ── Agent ─────────────────────────────────────────────────────────────
@@ -87,6 +125,8 @@ class Agent:
     def __init__(self):
         self.mode = getattr(Config, 'llm_mode', 'anthropic') or 'anthropic'
         self.history: list[dict] = []
+        # User profile - luu birth_date sau khi user cung cap
+        self.user_profile: dict[str, str] = {}
 
         if self.mode == 'openai':
             self.client = OpenAI(
@@ -99,27 +139,39 @@ class Agent:
             self.model = 'claude-sonnet-4-6'
 
     def _system(self) -> list[dict]:
-        """System prompt với cache_control. Frozen — không thay đổi giữa các request."""
+        """System prompt voi cache_control. Frozen - khong thay doi giua cac request."""
         return [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
 
     def _with_date(self, user_message: str) -> str:
-        """Inject ngày hôm nay vào user message — KHÔNG vào system prompt."""
+        """Inject ngay hom nay + user profile vao user message."""
         today = date.today().strftime("%A, %d/%m/%Y")
-        return f"[Hôm nay: {today}]\n{user_message}"
+        profile_str = ""
+        if self.user_profile.get("birth_date"):
+            profile_str = f"\n[User profile - birth_date: {self.user_profile['birth_date']}]"
+        return f"[Hom nay: {today}]{profile_str}\n{user_message}"
+
+    def _extract_profile(self, user_message: str) -> None:
+        """Thu trich xuat birth_date tu tin nhan user neu chua co."""
+        if self.user_profile.get("birth_date"):
+            return
+        # Tim 4 chu so lien tiep trong khoang nam hop le
+        import re
+        years = re.findall(r'\b(19[4-9]\d|200[0-9]|201[0-9]|202[0-4])\b', user_message)
+        if years:
+            self.user_profile["birth_date"] = years[0]
 
     def chat(self, user_message: str) -> str:
-        """Sync chat — tool-use loop, trả về text cuối cùng."""
+        """Sync chat - tool-use loop, tra ve text cuoi cung."""
+        if self.mode == "openai":
+            return self._chat_openai(user_message)
+
+        self._extract_profile(user_message)
         messages = list(self.history)
         injected = self._with_date(user_message)
         messages.append({"role": "user", "content": injected})
 
         for iteration in range(MAX_TOOL_ITERATIONS):
             response = self._call_claude(messages)
-
-            # BUG FIX so với agents.py cũ:
-            # Lưu response.content (list of blocks), KHÔNG phải reply_text (string).
-            # Khi bật thinking, thinking blocks phải tồn tại trong history —
-            # nếu chỉ lưu text string, API sẽ báo lỗi ở turn tiếp theo.
             messages.append({"role": "assistant", "content": response.content})
 
             u = response.usage
@@ -135,7 +187,6 @@ class Agent:
                 reply = "\n".join(
                     b.text for b in response.content if isinstance(b, TextBlock)
                 )
-                # Persist vào history sau khi xong turn
                 self.history.append({"role": "user",      "content": injected})
                 self.history.append({"role": "assistant", "content": response.content})
                 return reply
@@ -154,17 +205,13 @@ class Agent:
                 messages.append({"role": "user", "content": tool_results})
                 continue
 
-            break  # stop_reason khác
+            break
 
-        return "Xin lỗi, em không thể xử lý yêu cầu này. Thử lại với câu hỏi đơn giản hơn nhé!"
+        return "Xin loi, em khong the xu ly yeu cau nay. Thu lai voi cau hoi don gian hon nhe!"
 
     async def stream_chat(self, user_message: str) -> AsyncGenerator[str | dict, None]:
-        """Async generator stream cho Telegram fake-streaming.
-
-        Yields:
-            str  — text chunk để bot edit_message realtime
-            dict — {"type": "tool_use", "name": "..."} để hiện pill trạng thái
-        """
+        """Async generator stream cho Telegram fake-streaming."""
+        self._extract_profile(user_message)
         messages = list(self.history)
         injected = self._with_date(user_message)
         messages.append({"role": "user", "content": injected})
@@ -233,7 +280,6 @@ class Agent:
         raise Exception("Claude API: rate limit exceeded after 3 retries")
 
     def _call_openai(self, messages: list[dict[str, Any]]) -> Any:
-        """OpenAI-compatible chat completion with tool calling."""
         tool_defs = [
             {
                 "type": "function",
@@ -261,7 +307,6 @@ class Agent:
         raise Exception("OpenAI-compatible API: rate limit exceeded after 3 retries")
 
     def _parse_openai_response(self, response: Any) -> tuple[str, list[dict[str, Any]]]:
-        """Parse OpenAI response: extract reply text and tool calls."""
         choice = response.choices[0]
         message = choice.message
         reply_text = message.content or ""
@@ -278,65 +323,10 @@ class Agent:
         return reply_text, tool_calls
 
     def _system_text(self) -> str:
-        """System prompt as plain text (for OpenAI-compatible APIs)."""
         return SYSTEM_PROMPT
 
-    def chat(self, user_message: str) -> str:
-        """Sync chat — tool-use loop, trả về text cuối cùng."""
-        if self.mode == "openai":
-            return self._chat_openai(user_message)
-
-        messages = list(self.history)
-        injected = self._with_date(user_message)
-        messages.append({"role": "user", "content": injected})
-
-        for iteration in range(MAX_TOOL_ITERATIONS):
-            response = self._call_claude(messages)
-
-            # BUG FIX so với agents.py cũ:
-            # Lưu response.content (list of blocks), KHÔNG phải reply_text (string).
-            # Khi bật thinking, thinking blocks phải tồn tại trong history —
-            # nếu chỉ lưu text string, API sẽ báo lỗi ở turn tiếp theo.
-            messages.append({"role": "assistant", "content": response.content})
-
-            u = response.usage
-            print(
-                f"[iter {iteration + 1}] "
-                f"cache_read={getattr(u, 'cache_read_input_tokens', 0)} "
-                f"cache_create={getattr(u, 'cache_creation_input_tokens', 0)} "
-                f"input={u.input_tokens} output={u.output_tokens} "
-                f"stop={response.stop_reason}"
-            )
-
-            if response.stop_reason == "end_turn":
-                reply = "\n".join(
-                    b.text for b in response.content if isinstance(b, TextBlock)
-                )
-                # Persist vào history sau khi xong turn
-                self.history.append({"role": "user",      "content": injected})
-                self.history.append({"role": "assistant", "content": response.content})
-                return reply
-
-            if response.stop_reason == "tool_use":
-                tool_results = []
-                for block in response.content:
-                    if not isinstance(block, ToolUseBlock):
-                        continue
-                    result = self._execute_tool(block)
-                    tool_results.append({
-                        "type":        "tool_result",
-                        "tool_use_id": block.id,
-                        "content":     str(result),
-                    })
-                messages.append({"role": "user", "content": tool_results})
-                continue
-
-            break  # stop_reason khác
-
-        return "Xin lỗi, em không thể xử lý yêu cầu này. Thử lại với câu hỏi đơn giản hơn nhé!"
-
     def _chat_openai(self, user_message: str) -> str:
-        """OpenAI-compatible chat with tool calling loop."""
+        self._extract_profile(user_message)
         messages = list(self.history)
         injected = self._with_date(user_message)
         messages.append({"role": "user", "content": injected})
@@ -364,7 +354,7 @@ class Agent:
                     "content": result,
                 })
 
-        return "Xin lỗi, em không thể xử lý yêu cầu này. Thử lại với câu hỏi đơn giản hơn nhé!"
+        return "Xin loi, em khong the xu ly yeu cau nay. Thu lai voi cau hoi don gian hon nhe!"
 
     def _save_history(self, user_message: str, reply_text: str) -> None:
         self.history.append({"role": "user", "content": user_message})
@@ -377,10 +367,9 @@ class Agent:
         try:
             return fn(**block.input)
         except Exception as e:
-            return f"Lỗi khi chạy {block.name}: {e}"
+            return f"Loi khi chay {block.name}: {e}"
 
     def _execute_tool_name(self, name: str, args: str) -> str:
-        """Execute tool by name + JSON string args (OpenAI format)."""
         fn = TOOL_FUNCTIONS.get(name)
         if not fn:
             return f"Unknown tool: {name}"
@@ -394,4 +383,4 @@ class Agent:
         try:
             return fn(**parsed)
         except Exception as e:
-            return f"Lỗi khi chạy {name}: {e}"
+            return f"Loi khi chay {name}: {e}"
