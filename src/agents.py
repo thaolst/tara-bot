@@ -31,6 +31,8 @@ NGUYEN TAC:
 - Khi user hoi ve may bay, goi tool search_flights.
 - Khi user hoi gia san pham, goi tool search_shopping.
 - Sau khi tool tra ket qua, chuyen tiep NGUYEN VAN ket qua do cho user, chi them 1-2 cau ngan.
+- search_flights va search_shopping tra ve link Google Flights/Shopping. User click link de xem gia thi truong.
+- Khong can bao loi tool — neu tool tra link, chi can dua link do cho user.
 - KHONG reformat lai ket qua tu tool.
 - Co the noi chuyen thong thuong - khong can goi tool.
 
@@ -56,7 +58,7 @@ MAC DINH CHO CAU HOI MO HO VE THOI GIAN:
 
 FLIGHT_TOOL: dict[str, Any] = {
     "name": "search_flights",
-    "description": "Tim chuyen bay. Tra ve gia, hang, gio bay.",
+    "description": "Tim chuyen bay. Tra ve link Google Flights de xem gia.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -72,7 +74,7 @@ FLIGHT_TOOL: dict[str, Any] = {
 
 SHOPPING_TOOL: dict[str, Any] = {
     "name": "search_shopping",
-    "description": "Tim san pham, so sanh gia.",
+    "description": "Tim san pham, so sanh gia. Tra ve link Google Shopping.",
     "input_schema": {
         "type": "object",
         "properties": {
