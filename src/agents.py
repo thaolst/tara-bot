@@ -87,8 +87,9 @@ SHOPPING_TOOL: dict[str, Any] = {
 LUCKY_DATE_TOOL: dict[str, Any] = {
     "name": "get_lucky_dates",
     "description": (
-        "Xem ngay gio tot/xau theo Am Lich. CHI goi khi user CHU DONG hoi ve ngay tot, "
-        "gio tot, xem ngay, hop tuoi, xuat hanh. KHONG tu dong goi khi user chi tim ve may bay. "
+        "Xem ngay gio tot/xau theo Am Lich cho 1 hoac NHIEU nguoi (ca gia dinh). "
+        "Chi goi khi user CHU DONG hoi ve ngay tot, gio tot, xem ngay, hop tuoi, xuat hanh. "
+        "KHONG tu dong goi khi user chi tim ve may bay. "
         "Tinh Can Chi ngay, gio Hoang Dao, moi quan he voi tuoi user (Luc Hop, Tam Hop, Luc Xung)."
     ),
     "input_schema": {
@@ -104,6 +105,12 @@ LUCKY_DATE_TOOL: dict[str, Any] = {
                 "type": "string",
                 "description": "Gio sinh (HH:MM), tuy chon. Chi truyen khi user cung cap.",
             },
+            "birth_dates": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Danh sach ngay sinh cho NHIEU nguoi (vd: ['1995', '1965']). "
+                               "Dung khi user hoi cho gia dinh / nhom ban.",
+            },
             "from_date": {
                 "type": "string",
                 "description": "Bat dau xem tu ngay nao (YYYY-MM-DD). Mac dinh hom nay.",
@@ -113,7 +120,6 @@ LUCKY_DATE_TOOL: dict[str, Any] = {
                 "description": "So ngay can xem (mac dinh 14, toi da 30).",
             },
         },
-        "required": ["birth_date"],
     },
 }
 

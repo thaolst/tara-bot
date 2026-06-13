@@ -207,103 +207,86 @@ class DayInfo(NamedTuple):
 _WEEKDAY_VN = ["Thu 2", "Thu 3", "Thu 4", "Thu 5", "Thu 6", "Thu 7", "Chu Nhat"]
 
 
-def _resolve_person(birth_date: str) -> dict | None:
-    """Tu birth_date linh hoat -> chi de so sanh + thong tin hien thi.
-
-    Returns None neu khong parse duoc.
-    """
-    try:
-        bd = birth_date.strip()
-        if len(bd) == 4:
-            year = int(bd)
-            chi_tuoi = _chi_of_birth_year(year)
-            return {
-                "label": bd,
-                "year": year,
-                "chi_tuoi": chi_tuoi,
-                "chi_compare": chi_tuoi,
-                "nhat_tru": None,
-                "detail": "year",
-            }
-        bf = date.fromisoformat(bd)
-        chi_tuoi = _chi_of_birth_year(bf.year)
-        can_s, chi_s = _can_chi_of_date(bf)
-        return {
-            "label": bd,
-            "year": bf.year,
-            "chi_tuoi": chi_tuoi,
-            "chi_compare": chi_s,  # uu tien Nhat Tru
-            "nhat_tru": (can_s, chi_s),
-            "detail": "date",
-        }
-    except Exception:
-        return None
-
-
 def get_lucky_dates(
-    birth_date: str,
-    birth_time: str | None = None,
+    birth_date: str = "",
     from_date: str | None = None,
     days: int = 14,
+    birth_dates: str | list[str] | None = None,
 ) -> str:
     """
-    Tinh ngay gio tot cho user dua tren thong tin sinh.
-
-    Input linh hoat - thieu thong tin van cho ket qua, do chi tiet tang dan:
-      - Chi nam (YYYY)          -> tinh theo con giap (chi tuoi)
-      - Du ngay (YYYY-MM-DD)    -> tinh them Nhat Tru (Can Chi ngay sinh), hop chinh xac hon
-      - Them gio sinh (HH:MM)   -> ghi nhan du Tu Tru, goi y gio Hoang Dao hop hon
+    Tinh ngay gio tot cho 1 hoac nhieu nguoi dua tren ngay sinh.
 
     Args:
-        birth_date: YYYY hoac YYYY-MM-DD
-        birth_time: HH:MM (tuy chon)
+        birth_date: Ngay sinh YYYY-MM-DD hoac YYYY (cho 1 nguoi)
         from_date:  Bat dau xem tu ngay nao (YYYY-MM-DD), mac dinh hom nay
-        days:       So ngay xem (mac dinh 14, toi da 30)
+        days:       So ngay xem phia truoc (mac dinh 14)
+        birth_dates: List ngay sinh cho nhieu nguoi (vd: ["1995", "1965", "1968"])
 
     Returns:
-        Formatted string cho Telegram, luon kem disclaimer.
+        Formatted string cho Telegram.
     """
-    days = max(1, min(30, days))
-
-    # Parse birth - linh hoat
-    birth_full: date | None = None
-    detail = "year"  # year | date | datetime
-    try:
-        bd = birth_date.strip()
-        if len(bd) == 4:
-            birth_year = int(bd)
-        else:
-            birth_full = date.fromisoformat(bd)
-            birth_year = birth_full.year
-            detail = "date"
-    except Exception:
-        return "Khong doc duoc ngay sinh. Ban nhap nam (vi du 1995) hoac ngay day du (1995-03-15) cung duoc."
-
-    if birth_time and birth_full:
-        detail = "datetime"
-
-    chi_tuoi = _chi_of_birth_year(birth_year)
-    animal_tuoi = CHI_ANIMAL[chi_tuoi]
-
-    # Nhat Tru - Can Chi ngay sinh (chinh xac hon chi tuoi nam)
-    nhat_tru = None
-    chi_compare = chi_tuoi  # mac dinh so theo chi tuoi
-    if birth_full:
-        can_s, chi_s = _can_chi_of_date(birth_full)
-        nhat_tru = (can_s, chi_s)
-        chi_compare = chi_s  # uu tien so Nhat Tru khi co
-
     start = date.fromisoformat(from_date) if from_date else date.today()
-    results: list[DayInfo] = []
+    
+    # Collect all birth dates into a list
+    bdates: list[str] = []
+    if birth_dates:
+        if isinstance(birth_dates, str):
+            # Handle comma-separated or newline-separated
+            bdates = [b.strip() for b in birth_dates.replace("\n", ",").split(",") if b.strip()]
+        else:
+            bdates = list(birth_dates)
+    elif birth_date:
+        bdates = [birth_date]
+    
+    if not bdates:
+        return "Vui long nhap ngay sinh (birth_date) hoac danh sach ngay sinh (birth_dates)."
+    
+    # Parse birth dates and get unique chi
+    chi_users: list[tuple[int, str, str, str]] = []  # (birth_year, chi, animal, label)
+    for bd in bdates:
+        try:
+            if len(bd) == 4:
+                birth_year = int(bd)
+            else:
+                birth_year = date.fromisoformat(bd).year
+        except Exception:
+            # Try partial date "MM-DD" - use current year
+            try:
+                from datetime import datetime
+                birth_year = datetime.strptime(bd, "%m-%d").replace(year=start.year).year
+            except Exception:
+                continue
+        
+        chi = _chi_of_birth_year(birth_year)
+        animal = CHI_ANIMAL[chi]
+        
+        # Create label
+        year_label = bd if len(bd) == 4 else bd
+        chi_users.append((birth_year, chi, animal, year_label))
+    
+    if not chi_users:
+        return "Khong doc duoc ngay sinh nao."
+    
+    # For a single user, use the original format
+    if len(chi_users) == 1:
+        return _compute_and_format(start, days, chi_users[0])
+    
+    # For multiple users, compute combined results
+    return _compute_and_format_multi(start, days, chi_users)
 
+
+def _compute_and_format(start: date, days: int, user_info: tuple) -> str:
+    """Compute and format for a single user."""
+    birth_year, chi_tuoi, animal, _ = user_info
+    results: list[DayInfo] = []
     for i in range(days):
         d = start + timedelta(days=i)
         can, chi = _can_chi_of_date(d)
-        score = _day_score(can, chi, chi_compare)
-        rel = _relation(chi_compare, chi)
+        score = _day_score(can, chi, chi_tuoi)
+        rel = _relation(chi_tuoi, chi)
         lucky_hrs = _lucky_hours(chi)
         wd = _WEEKDAY_VN[d.weekday()]
-        note = _build_note(can, chi, rel, score)
+        note = _build_note(can, chi, [rel], score)
         results.append(DayInfo(
             date_str=d.isoformat(),
             weekday=wd,
@@ -313,11 +296,87 @@ def get_lucky_dates(
             lucky_hours=lucky_hrs,
             note=note,
         ))
+    return _format_output(results, chi_tuoi, animal)
 
-    return _format_output(results, chi_tuoi, animal_tuoi, birth_year, detail, nhat_tru, birth_time)
+
+def _compute_and_format_multi(start: date, days: int, chi_users: list) -> str:
+    """Compute and format for multiple users, finding common good days."""
+    results: list[dict] = []
+    
+    for i in range(days):
+        d = start + timedelta(days=i)
+        can, chi = _can_chi_of_date(d)
+        
+        # Compute scores for all users
+        user_scores = []
+        total_score = 0
+        for birth_year, chi_tuoi, animal, label in chi_users:
+            score = _day_score(can, chi, chi_tuoi)
+            rel = _relation(chi_tuoi, chi)
+            user_scores.append({"chi": chi_tuoi, "animal": animal, "score": score, "rel": rel, "label": label})
+            total_score += score
+        
+        avg_score = total_score // len(chi_users)
+        rels = [u["rel"] for u in user_scores]
+        lucky_hrs = _lucky_hours(chi)
+        wd = _WEEKDAY_VN[d.weekday()]
+        note = _build_note(can, chi, rels, avg_score)
+        
+        results.append({
+            "date_str": d.isoformat(),
+            "weekday": wd,
+            "can": can,
+            "chi": chi,
+            "animal": CHI_ANIMAL[chi],
+            "score": avg_score,
+            "user_scores": user_scores,
+            "lucky_hours": lucky_hrs[:3],
+            "note": note,
+        })
+    
+    return _format_output_multi(results, chi_users)
 
 
-def _build_note(can: str, chi: str, rel: str, score: int) -> str:
+def _format_output_multi(results: list[dict], chi_users: list) -> str:
+    """Format combined lucky dates for multiple users."""
+    labels = [f"tuoi {u[2]} {u[1]}" for u in chi_users]
+    lines = []
+    lines.append(f"Xem ngay tot cho: {', '.join(labels)}")
+    lines.append(f"Xem {len(results)} ngay")
+    lines.append("")
+    
+    # Filter good days
+    good = [r for r in results if r["score"] >= 65]
+    good.sort(key=lambda r: r["score"], reverse=True)
+    
+    if good:
+        lines.append("Cac ngay tot nhat cho ca nha:")
+        lines.append("")
+        for r in good[:5]:
+            bar = _score_bar(r["score"])
+            lines.append(f"{r['date_str']} ({r['weekday']}) - {r['can']} {r['chi']} {r['animal']}")
+            lines.append(f"  [{bar}] {r['score']}/100")
+            
+            # Per-user breakdown
+            for us in r["user_scores"]:
+                rel_icon = {"tam_hop": "✅", "hop": "✅", "binh": "➖", "hoa": "➖", "xung": "❌"}
+                icon = rel_icon.get(us["rel"], "➖")
+                lines.append(f"    {icon} {us['label']}: {us['score']}/100")
+            
+            if r["lucky_hours"]:
+                gio_list = ", ".join(
+                    f"{g['chi']} {g['animal']} ({g['time']})"
+                    for g in r["lucky_hours"]
+                )
+                lines.append(f"  Gio Hoang Dao: {gio_list}")
+            lines.append("")
+    else:
+        lines.append("Khong co ngay tot cho ca nha trong thoi gian nay.")
+    
+    return "\n".join(lines)
+
+
+def _build_note(can: str, chi: str, rels: list[str], score: int) -> str:
     rel_text = {
         "tam_hop": "Tam Hop - rat tot",
         "hop": "Luc Hop - tot",
@@ -325,7 +384,6 @@ def _build_note(can: str, chi: str, rel: str, score: int) -> str:
         "binh": "Binh thuong",
         "xung": "Luc Xung - tranh di chuyen neu co the",
     }
-    base = rel_text.get(rel, "")
     if score >= 80:
         prefix = "Ngay rat tot"
     elif score >= 65:
@@ -336,191 +394,61 @@ def _build_note(can: str, chi: str, rel: str, score: int) -> str:
         prefix = "Nen can nhac"
     else:
         prefix = "Tranh neu duoc"
-    if base:
-        return f"{prefix}, {base.lower()}"
-    return prefix
+
+    rel_priority = ["xung", "binh", "hoa", "hop", "tam_hop"]
+    worst_rel = min(rels, key=lambda r: rel_priority.index(r)) if rels else "binh"
+    base = rel_text.get(worst_rel, "")
+    return f"{prefix}. {base}".strip(". ")
 
 
-def _level_emoji(score: int) -> str:
-    """Emoji muc do thay cho thanh diem so."""
-    if score >= 80:
-        return "🟢"  # rat tot
-    if score >= 65:
-        return "🟢"  # tot
-    if score >= 50:
-        return "🟡"  # binh thuong
-    if score >= 35:
-        return "🟠"  # nen can nhac
-    return "🔴"       # tranh
+def _score_bar(score: int) -> str:
+    filled = round(score / 10)
+    return "█" * filled + "░" * (10 - filled)
 
 
-def _level_word(score: int) -> str:
-    if score >= 80:
-        return "rat tot"
-    if score >= 65:
-        return "tot"
-    if score >= 50:
-        return "binh thuong"
-    if score >= 35:
-        return "nen can nhac"
-    return "nen tranh"
-
-
-def _format_output(
-    days: list[DayInfo],
-    chi_tuoi: str,
-    animal: str,
-    birth_year: int,
-    detail: str = "year",
-    nhat_tru: tuple | None = None,
-    birth_time: str | None = None,
-) -> str:
-    good_days = [d for d in days if d.score >= 65]
-    start_str = days[0].date_str
-    end_str = days[-1].date_str
-
+def _format_output(days: list[DayInfo], chi_tuoi: str, animal: str) -> str:
     lines = []
-    # Mo dau - phan anh do chi tiet cua input
-    if detail == "year":
-        lines.append(f"Tuoi {chi_tuoi} {animal} ({birth_year}), minh xem ngay xuat hanh tu {start_str} den {end_str} cho ban.")
-    elif detail == "date" and nhat_tru:
-        lines.append(f"Ngay sinh cua ban roi vao ngay {nhat_tru[0]} {nhat_tru[1]} {CHI_ANIMAL[nhat_tru[1]]} (Nhat Tru), tuoi {chi_tuoi} {animal}.")
-        lines.append(f"Minh xem ngay xuat hanh tu {start_str} den {end_str}, so theo Nhat Tru cho chinh xac hon.")
-    else:  # datetime
-        lines.append(f"Ban sinh ngay {nhat_tru[0]} {nhat_tru[1]} {CHI_ANIMAL[nhat_tru[1]]} (Nhat Tru), gio {birth_time}, tuoi {chi_tuoi} {animal}.")
-        lines.append(f"Du thong tin Tu Tru roi. Minh xem ngay xuat hanh tu {start_str} den {end_str} cho ban.")
+    lines.append(f"Tu vi xuat hanh cho tuoi {chi_tuoi} {animal}")
     lines.append("")
 
-    if good_days:
-        top = sorted(good_days, key=lambda x: x.score, reverse=True)
-        best = top[0]
-        gio = ", ".join(f"{g['time']} ({g['chi']} {g['animal']})" for g in best.lucky_hours[:3])
-        lines.append(f"Ngay dep nhat la {best.date_str} ({best.weekday}), ngay {best.can} {best.chi} {CHI_ANIMAL[best.chi]} - {best.note.lower()}.")
-        lines.append(f"Gio tot trong ngay do: {gio}.")
-        lines.append("")
+    # Loc ngay tot (score >= 65) va sort
+    good_days = [d for d in days if d.score >= 65]
+    all_days = days
 
-        if len(top) > 1:
-            lines.append("May ngay khac cung dep neu ban can lui lich:")
-            for d in top[1:4]:
-                lines.append(f"{_level_emoji(d.score)} {d.date_str} ({d.weekday}) - ngay {d.chi} {CHI_ANIMAL[d.chi]}, {_level_word(d.score)}")
-            lines.append("")
-    else:
-        lines.append("Trong khoang nay khong co ngay that su dep, nhung van co the di duoc.")
-        lines.append("")
+    if not good_days:
+        lines.append("Trong " + str(len(days)) + " ngay toi khong co ngay qua tot.")
+        lines.append("Chon ngay co diem cao nhat ben duoi.")
 
-    # Cac ngay nen tranh (score thap)
-    bad_days = [d for d in days if d.score < 50]
-    if bad_days:
-        bad_str = ", ".join(f"{d.date_str} ({d.weekday})" for d in bad_days[:4])
-        lines.append(f"Nen tranh hoac can than: {bad_str}.")
-        lines.append("")
-
-    lines.append("Ban muon minh tim ve may bay cho ngay nao trong so nay khong?")
-    lines.append("")
-    lines.append("Luu y: day chi la tham khao theo lich can chi truyen thong, khong phai du bao co co so khoa hoc. Ban cu chon ngay tien cho minh nhe.")
-
-    return "\n".join(lines)
-
-
-def get_lucky_dates_group(
-    birth_dates: list[str],
-    from_date: str | None = None,
-    days: int = 14,
-) -> str:
-    """
-    Tim ngay xuat hanh hop cho mot nhom (2-5 nguoi cung di).
-
-    Quy tac:
-      - Moi ngay tinh quan he voi tung nguoi.
-      - Neu BAT KY ai bi Luc Xung -> loai ngay do (an toan nhat).
-      - Diem nhom = diem THAP NHAT trong nhom (phan anh nguoi yeu nhat, khong che giau).
-      - Hien top ngay con lai + ghi chu ai hop nhat.
-
-    Args:
-        birth_dates: list nam sinh hoac ngay sinh (moi phan tu YYYY hoac YYYY-MM-DD)
-        from_date:   bat dau xem (YYYY-MM-DD), mac dinh hom nay
-        days:        so ngay xem (mac dinh 14, toi da 30)
-    """
-    days = max(1, min(30, days))
-
-    people = []
-    for bd in birth_dates:
-        p = _resolve_person(bd)
-        if p:
-            people.append(p)
-
-    if not people:
-        return "Chua doc duoc thong tin nguoi nao. Ban gui nam sinh hoac ngay sinh cua moi nguoi nhe."
-
-    if len(people) == 1:
-        # Roi ve che do 1 nguoi
-        return get_lucky_dates(birth_dates[0], from_date=from_date, days=days)
-
-    start = date.fromisoformat(from_date) if from_date else date.today()
-
-    # Mo ta nhom
-    who = ", ".join(p["label"] for p in people)
-    lines = [f"Nhom {len(people)} nguoi ({who}), minh tim ngay hop cho ca nhom."]
+    lines.append(f"Xem {len(all_days)} ngay tu {all_days[0].date_str} den {all_days[-1].date_str}")
     lines.append("")
 
-    safe_days = []   # khong xung ai
-    for i in range(days):
-        d = start + timedelta(days=i)
-        can, chi = _can_chi_of_date(d)
+    # Hien thi tat ca, highlight ngay tot
+    for d in all_days:
+        bar = _score_bar(d.score)
+        is_good = d.score >= 65
+        star = "OK" if is_good else "  "
+        lines.append(
+            f"{star} {d.date_str} ({d.weekday}) - {d.can} {d.chi} {CHI_ANIMAL[d.chi]}"
+        )
+        lines.append(f"   [{bar}] {d.score}/100 - {d.note}")
 
-        # Tinh quan he tung nguoi
-        rels = [(p, _relation(p["chi_compare"], chi)) for p in people]
-        has_xung = any(r == "xung" for _, r in rels)
-        if has_xung:
-            continue  # loai ngay xung bat ky ai
-
-        scores = [_day_score(can, chi, p["chi_compare"]) for p in people]
-        group_score = min(scores)  # nguoi yeu nhat quyet dinh
-
-        # Ai hop nhat (tam_hop hoac hop)
-        good_for = [p["label"] for p, r in rels if r in ("tam_hop", "hop")]
-
-        safe_days.append({
-            "date": d.isoformat(),
-            "weekday": _WEEKDAY_VN[d.weekday()],
-            "can": can, "chi": chi,
-            "group_score": group_score,
-            "good_for": good_for,
-            "lucky_hours": _lucky_hours(chi),
-        })
-
-    if not safe_days:
-        lines.append("Trong khoang nay khong co ngay nao tot deu cho ca nhom (deu vuong xung voi it nhat 1 nguoi).")
-        lines.append("Ban thu mo rong khoang ngay, hoac minh xem rieng tung nguoi cung duoc.")
-        lines.append("")
-        lines.append("Luu y: xem ngay cho nhom la cach dung hoa tham khao, khong phai phuong phap tu vi chuan (von xem cho 1 nguoi). Ban cu chon ngay tien nhe.")
-        return "\n".join(lines)
-
-    top = sorted(safe_days, key=lambda x: x["group_score"], reverse=True)
-    best = top[0]
-    gio = ", ".join(f"{g['time']} ({g['chi']} {g['animal']})" for g in best["lucky_hours"][:3])
-
-    lines.append(f"Ngay hop nhat cho ca nhom: {best['date']} ({best['weekday']}), ngay {best['can']} {best['chi']} {CHI_ANIMAL[best['chi']]}, khong xung voi ai.")
-    lines.append(f"Gio tot trong ngay: {gio}.")
-    if best["good_for"]:
-        lines.append(f"Dac biet hop voi: {', '.join(best['good_for'])}.")
-    lines.append("")
-
-    if len(top) > 1:
-        lines.append("May ngay khac cung an toan cho ca nhom:")
-        for d in top[1:5]:
-            extra = f" (hop {', '.join(d['good_for'])})" if d["good_for"] else ""
-            lines.append(f"{_level_emoji(d['group_score'])} {d['date']} ({d['weekday']}) - ngay {d['chi']} {CHI_ANIMAL[d['chi']]}, {_level_word(d['group_score'])}{extra}")
+        if is_good:
+            gio_list = ", ".join(
+                f"{g['chi']} {g['animal']} ({g['time']})"
+                for g in d.lucky_hours[:3]  # chi hien 3 gio dau
+            )
+            lines.append(f"   Gio Hoang Dao: {gio_list}")
         lines.append("")
 
-    # Ngay da loai vi xung
-    removed = days - len(safe_days)
-    if removed > 0:
-        lines.append(f"Da bo qua {removed} ngay vi xung voi it nhat mot nguoi trong nhom.")
+    # Goi y tom tat
+    top3 = sorted(good_days, key=lambda x: x.score, reverse=True)[:3]
+    if top3:
+        lines.append("Top ngay nen chon:")
+        for d in top3:
+            lines.append(
+                f"  - {d.date_str} ({d.weekday}) diem {d.score}/100"
+            )
         lines.append("")
-
-    lines.append("Ban muon minh tim ve may bay cho ngay nao trong so nay khong?")
-    lines.append("")
-    lines.append("Luu y: xem ngay cho nhom la cach dung hoa tham khao, khong phai phuong phap tu vi chuan (von xem cho 1 nguoi). Ban cu chon ngay tien cho ca nha nhe.")
+        lines.append("Hoi them gio cu the de xem gio tot trong ngay do.")
 
     return "\n".join(lines)
