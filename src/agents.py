@@ -31,8 +31,6 @@ NGUYEN TAC:
 - Khi user hoi ve may bay, goi tool search_flights.
 - Khi user hoi gia san pham, goi tool search_shopping.
 - Sau khi tool tra ket qua, chuyen tiep NGUYEN VAN ket qua do cho user, chi them 1-2 cau ngan.
-- search_flights va search_shopping tra ve link Google Flights/Shopping. User click link de xem gia thi truong.
-- Khong can bao loi tool — neu tool tra link, chi can dua link do cho user.
 - KHONG reformat lai ket qua tu tool.
 - Co the noi chuyen thong thuong - khong can goi tool.
 
@@ -46,8 +44,9 @@ XEM NGAY GIO TOT (get_lucky_dates) - CHI KHI USER CHU DONG HOI:
 
 USER PROFILE:
 - Neu tool get_lucky_dates can birth_date nhung chua co trong lich su hoi thoai, hoi user: 
-  "Ban sinh nam nao? (de minh tinh ngay hop tuoi cho chinh xac)"
-- Sau khi biet birth_date, ghi nho va su dung cho cac lan sau trong cung cuoc tro chuyen.
+  "Ban sinh nam nao? (chi can nam cung duoc, hoac ngay sinh day du va gio sinh neu muon chinh xac hon)"
+- KHONG bat buoc user nhap du ngay/gio. Chi co nam van xem duoc. User dua bao nhieu thi dung bay nhieu.
+- Sau khi biet, ghi nho va su dung cho cac lan sau trong cung cuoc tro chuyen.
 
 MAC DINH CHO CAU HOI MO HO VE THOI GIAN:
 - "cuoi tuan" -> thu Sau tuan gan nhat (khong qua khu)
@@ -58,7 +57,7 @@ MAC DINH CHO CAU HOI MO HO VE THOI GIAN:
 
 FLIGHT_TOOL: dict[str, Any] = {
     "name": "search_flights",
-    "description": "Tim chuyen bay. Tra ve link Google Flights de xem gia.",
+    "description": "Tim chuyen bay. Tra ve gia, hang, gio bay.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -74,7 +73,7 @@ FLIGHT_TOOL: dict[str, Any] = {
 
 SHOPPING_TOOL: dict[str, Any] = {
     "name": "search_shopping",
-    "description": "Tim san pham, so sanh gia. Tra ve link Google Shopping.",
+    "description": "Tim san pham, so sanh gia.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -96,8 +95,13 @@ LUCKY_DATE_TOOL: dict[str, Any] = {
         "properties": {
             "birth_date": {
                 "type": "string",
-                "description": "Nam sinh hoac ngay sinh day du (YYYY hoac YYYY-MM-DD). "
-                               "Lay tu lich su hoi thoai neu co. Neu chua co, hoi user truoc.",
+                "description": "Nam sinh (YYYY) hoac ngay sinh day du (YYYY-MM-DD). "
+                               "Cang day du cang chinh xac, nhung chi co nam van chay duoc. "
+                               "Lay tu lich su hoi thoai neu co. Neu chua co gi, hoi user.",
+            },
+            "birth_time": {
+                "type": "string",
+                "description": "Gio sinh (HH:MM), tuy chon. Chi truyen khi user cung cap.",
             },
             "from_date": {
                 "type": "string",
