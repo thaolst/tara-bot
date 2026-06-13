@@ -376,6 +376,19 @@ def _format_output_multi(results: list[dict], chi_users: list) -> str:
     return "\n".join(lines)
 
 
+def get_lucky_dates_group(
+    birth_dates: list[str],
+    from_date: str | None = None,
+    days: int = 14,
+) -> str:
+    """Xem ngay tot cho nhom (2-5 nguoi). Tu choi ngay nao xung voi bat ky ai."""
+    return get_lucky_dates(
+        birth_dates=birth_dates,
+        from_date=from_date,
+        days=days,
+    )
+
+
 def _build_note(can: str, chi: str, rels: list[str], score: int) -> str:
     rel_text = {
         "tam_hop": "Tam Hop - rat tot",
