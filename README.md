@@ -1,6 +1,6 @@
 # TARA BOT 🤖✈️🛒
 
-[![Version](https://img.shields.io/badge/version-v2.1.0-brightgreen?style=flat-square)](https://github.com/thaolst/tara-bot/releases)
+[![Version](https://img.shields.io/github/v/release/thaolst/tara-bot?label=version&color=4ade80&style=flat-square)](https://github.com/thaolst/tara-bot/releases)
 [![GitHub stars](https://img.shields.io/github/stars/thaolst/tara-bot?style=flat-square&color=yellow)](https://github.com/thaolst/tara-bot/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/thaolst/tara-bot?style=flat-square&color=blue)](https://github.com/thaolst/tara-bot/network/members)
 
